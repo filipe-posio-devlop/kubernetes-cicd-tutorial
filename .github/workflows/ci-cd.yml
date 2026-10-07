@@ -27,32 +27,60 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
       - name: Update GitOps repository
-        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: powershell
         env:
           GIT_TOKEN: ${{ secrets.GITOPS_PAT }}
+          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
         run: |
-          # Configure git credential store
-          git config --global credential.helper store
-          echo "https://${GIT_TOKEN}:x-oauth-basic@github.com" > ~/.git-credentials
-          
-          # Remove any existing gitops directory
-          rm -rf gitops
-          
-          # Clone repository using HTTPS URL without token
-          git clone https://github.com/filipe-posio-devlop/grade-api-gitops.git gitops
-          cd gitops
-          
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:${{ github.sha }}|g" deployment.yaml
-          else
-            sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:${{ github.sha }}|g" deployment.yaml
-          fi
-          
-          # Commit changes
+          $ErrorActionPreference = "Stop"
+      
+          # Configure Git
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+      
+          # Remove previous checkout
+          if (Test-Path "gitops") {
+              Remove-Item -Recurse -Force "gitops"
+          }
+      
+          # Clone using token
+          $repoUrl = "https://x-access-token:$env:GIT_TOKEN@github.com/filipe-posio-devlop/grade-api-gitops.git"
+      
+          git clone $repoUrl gitops
+      
+          Set-Location gitops
+      
+          # Update image
+          $deploymentFile = "deployment.yaml"
+      
+          $content = Get-Content $deploymentFile -Raw
+      
+          $newImage = "image: $env:IMAGE_NAME`:$env:IMAGE_TAG"
+      
+          $content = $content -replace `
+              "image:\s*ghcr\.io/filipe-posio-devlop/kubernetes-cicd-tutorial:.*", `
+              $newImage
+      
+          Set-Content $deploymentFile $content -NoNewline
+      
+          # Show the resulting image
+          Write-Host "Updated deployment:"
+          Select-String "image:" $deploymentFile
+      
+          # Check for changes
+          git diff -- deployment.yaml
+      
+          if (git diff --quiet -- deployment.yaml) {
+              Write-Host "No changes detected."
+              exit 0
+          }
+      
+          # Commit
           git add deployment.yaml
-          git commit -m "Update image to ${{ github.sha }}"
-          
+      
+          git commit -m "Update image to $env:IMAGE_TAG"
+      
           # Push
-          git push -f https://${GIT_TOKEN}@github.com/filipe-posio-devlop/grade-api-gitops.git main
+          git push origin main
