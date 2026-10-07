@@ -27,7 +27,7 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
       - name: Update GitOps repository
-        shell: bash
+        shell: 'C:\Program Files\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
         env:
           GIT_TOKEN: ${{ secrets.GITOPS_PAT }}
         run: |
